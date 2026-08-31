@@ -1,19 +1,15 @@
 /**
  * @file Device_t.cpp
- * @brief Implementación de la clase Device_t - Branch Raspberry
+ * @brief Implementación de la clase Device_t - Branch All
  * 
- * Implementa la lógica principal del dispositivo para Raspberry Pi,
- * incluyendo:
+ * Implementa la lógica principal del dispositivo, incluyendo:
  * - Obtención de temperatura desde OpenWeatherMap API
- * - Display en pantalla OLED SSD1306 (usando librería del sistema)
+ * - Display en pantalla OLED SSD1306 (I2C directo)
  * - Salida por consola
  * 
  * @author Proyecto RaspberryPi
  * @version 0.1.0
  * @date 2026
- * 
- * @note Esta rama está diseñada exclusivamente para Raspberry Pi
- *       y usa la librería SSD1306 instalada en el sistema
  */
 
 #include "Device_t.hpp"
@@ -21,21 +17,20 @@
 #include <sstream>
 #include <curl/curl.h>
 #include "nlohmann/json.hpp"
-#include <bcm2835.h>
 
-// Usar la librería SSD1306 del sistema (no local)
-#include <SSD1306_OLED.hpp>
+#ifdef HAS_BCM2835
+    #include <bcm2835.h>
+    
+    // Dirección I2C del OLED
+    #define OLED_ADDR 0x3C
+    #define OLED_CMD 0x00
+    #define OLED_DATA 0x40
+#endif
 
-// Using para simplificar el uso de nlohmann::json
 using json = nlohmann::json;
 
 /**
- * @brief Callback para escribir la respuesta de curl en un std::string
- * @param contents Puntero a los datos recibidos
- * @param size Tamaño de cada elemento
- * @param nmemb Número de elementos
- * @param s Puntero al string donde almacenar los datos
- * @return Número total de bytes procesados
+ * @brief Callback para curl
  */
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* s) {
     size_t newLength = size * nmemb;
@@ -45,68 +40,180 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::stri
 
 namespace Device {
 
+#ifdef HAS_BCM2835
 /**
- * @brief Constructor de Device_t
- * 
- * Inicializa valores por defecto y configura parámetros del dispositivo.
+ * @brief Escribe un byte al OLED via I2C
  */
-Device_t::Device_t()
-    : m_city("Buenos Aires")
-    , m_country("AR")
-    , m_apiKey("25647dfe3f88a205e55209d37e970b4d")  // API key de ejemplo
-    , m_hardwareInitialized(false)
-    , m_updateIntervalMs(60000)  // 60 segundos por defecto
-{
-    std::cout << "Device_t: Constructor llamado" << std::endl;
-    std::cout << "Device_t: Ciudad configurada: " << m_city << ", " << m_country << std::endl;
+bool oled_write_byte(uint8_t reg, uint8_t data) {
+    char buf[2] = {static_cast<char>(reg), static_cast<char>(data)};
+    bcm2835_i2c_setSlaveAddress(OLED_ADDR);
+    return bcm2835_i2c_write(buf, 2) == BCM2835_I2C_REASON_OK;
 }
 
 /**
- * @brief Destructor de Device_t
- * 
- * Limpia recursos del dispositivo.
+ * @brief Envía un comando al OLED
  */
-Device_t::~Device_t() {
-    std::cout << "Device_t: Destructor llamado" << std::endl;
-    if (m_hardwareInitialized) {
-        bcm2835_close();
-    }
+void oled_command(uint8_t cmd) {
+    oled_write_byte(OLED_CMD, cmd);
 }
 
 /**
- * @brief Inicializa el hardware del dispositivo
- * 
- * Inicializa bcm2835 para acceso a GPIO/SPI/I2C.
- * Requiere ejecutarse como root en Raspberry Pi.
- * 
- * @return true si la inicialización fue exitosa
+ * @brief Envía datos al OLED
  */
-bool Device_t::initializeHardware() {
-    std::cout << "Device_t: Inicializando hardware..." << std::endl;
-    
-    if (!bcm2835_init()) {
-        std::cerr << "Device_t: Error al inicializar bcm2835" << std::endl;
-        std::cerr << "Device_t: Verifique que está ejecutando como root" << std::endl;
-        m_hardwareInitialized = false;
+void oled_data(uint8_t data) {
+    oled_write_byte(OLED_DATA, data);
+}
+
+/**
+ * @brief Inicializa el OLED SSD1306
+ */
+bool oled_init() {
+    if (!bcm2835_i2c_begin()) {
         return false;
     }
     
-    m_hardwareInitialized = true;
-    std::cout << "Device_t: bcm2835 inicializado correctamente" << std::endl;
+    bcm2835_i2c_setSlaveAddress(OLED_ADDR);
+    bcm2835_i2c_set_baudrate(100000);
+    
+    // Secuencia de inicialización SSD1306
+    oled_command(0xAE); // Display OFF
+    oled_command(0xD5); oled_command(0x80);
+    oled_command(0xA8); oled_command(0x3F);
+    oled_command(0xD3); oled_command(0x00);
+    oled_command(0x40);
+    oled_command(0x8D); oled_command(0x14);
+    oled_command(0x20); oled_command(0x00);
+    oled_command(0xA1);
+    oled_command(0xC8);
+    oled_command(0xDA); oled_command(0x12);
+    oled_command(0x81); oled_command(0xCF);
+    oled_command(0xD9); oled_command(0xF1);
+    oled_command(0xDB); oled_command(0x40);
+    oled_command(0xA4);
+    oled_command(0xA6);
+    oled_command(0xAF); // Display ON
+    
+    bcm2835_delay(100);
     
     return true;
 }
 
 /**
- * @brief Obtiene la temperatura de la API de OpenWeatherMap
- * 
- * Realiza una solicitud HTTP GET a la API y parsea la respuesta
- * para extraer la temperatura actual.
- * 
- * @param city Nombre de la ciudad
- * @param country Código del país
- * @return Temperatura en grados Celsius, o -999.0 en caso de error
+ * @brief Limpia el buffer del OLED
  */
+void oled_clear() {
+    oled_command(0x21); // Columna
+    oled_command(0);
+    oled_command(127);
+    oled_command(0x22); // Página
+    oled_command(0);
+    oled_command(7);
+    
+    for (int i = 0; i < 1024; i++) {
+        oled_data(0x00);
+    }
+}
+
+/**
+ * @brief Muestra texto en el OLED (fuente básica 5x8)
+ */
+void oled_text(int x, int y, const char* text) {
+    // Fuente básica 5x8 - solo mayúsculas y algunos caracteres
+    static const uint8_t font[][5] = {
+        {0x00,0x00,0x00,0x00,0x00}, // Space
+        {0x7F,0x08,0x08,0x08,0x7F}, // H
+        {0x3E,0x41,0x41,0x41,0x3E}, // O
+        {0x7F,0x40,0x40,0x40,0x40}, // L
+        {0x7F,0x09,0x19,0x29,0x46}, // R
+        {0x3E,0x41,0x41,0x41,0x3E}, // O (same as O)
+        {0x7F,0x01,0x01,0x01,0x01}, // I
+        {0x3F,0x40,0x40,0x40,0x3F}, // U
+        {0x7F,0x09,0x19,0x29,0x46}, // R
+        {0x01,0x01,0x7F,0x01,0x01}, // T
+        {0x3E,0x41,0x41,0x51,0x73}, // E (approx)
+        {0x07,0x08,0x70,0x08,0x07}, // X (approx)
+        {0x7F,0x41,0x41,0x41,0x3E}, // D (approx)
+        {0x7F,0x49,0x49,0x49,0x41}, // M (approx)
+        {0x3E,0x41,0x41,0x41,0x3E}, // P (approx)
+        {0x7F,0x09,0x19,0x29,0x46}, // R
+        {0x7F,0x49,0x49,0x49,0x36}, // S (approx)
+    };
+    
+    // Posición en páginas
+    int page = y / 8;
+    int col = x;
+    
+    oled_command(0x21); // Columna
+    oled_command(col);
+    oled_command(127);
+    oled_command(0x22); // Página
+    oled_command(page);
+    oled_command(page);
+    
+    for (int i = 0; text[i] != '\0' && col < 128; i++) {
+        char c = text[i];
+        int idx = 0;
+        
+        if (c >= 'A' && c <= 'Z') idx = c - 'A' + 1;
+        else if (c == ' ') idx = 0;
+        else if (c == ':') idx = 5;
+        else if (c == '.') idx = 11;
+        else idx = 0;
+        
+        if (idx >= 0 && idx < 17) {
+            for (int j = 0; j < 5; j++) {
+                oled_data(font[idx][j]);
+            }
+            oled_data(0x00); // Espacio entre letras
+        }
+        col += 6;
+    }
+}
+#endif
+
+Device_t::Device_t()
+    : m_city("Buenos Aires")
+    , m_country("AR")
+    , m_apiKey("25647dfe3f88a205e55209d37e970b4d")
+    , m_hardwareInitialized(false)
+    , m_updateIntervalMs(60000)
+{
+    std::cout << "Device_t: Constructor llamado" << std::endl;
+}
+
+Device_t::~Device_t() {
+    std::cout << "Device_t: Destructor llamado" << std::endl;
+    #ifdef HAS_BCM2835
+        if (m_hardwareInitialized) {
+            bcm2835_i2c_end();
+            bcm2835_close();
+        }
+    #endif
+}
+
+bool Device_t::initializeHardware() {
+    std::cout << "Device_t: Inicializando hardware..." << std::endl;
+    
+    #ifdef HAS_BCM2835
+        if (!bcm2835_init()) {
+            std::cerr << "Device_t: Error al inicializar bcm2835" << std::endl;
+            return false;
+        }
+        
+        if (!oled_init()) {
+            std::cerr << "Device_t: Error al inicializar OLED" << std::endl;
+            return false;
+        }
+        
+        m_hardwareInitialized = true;
+        std::cout << "Device_t: Hardware inicializado correctamente" << std::endl;
+        return true;
+    #else
+        std::cout << "Device_t: Modo PC (sin hardware)" << std::endl;
+        return false;
+    #endif
+}
+
 double Device_t::fetchTemperature(const std::string& city, const std::string& country) {
     std::string api_url = "http://api.openweathermap.org/data/2.5/weather?q=" 
                          + city + "," + country 
@@ -125,14 +232,6 @@ double Device_t::fetchTemperature(const std::string& city, const std::string& co
     return parseTemperature(response);
 }
 
-/**
- * @brief Realiza una solicitud HTTP GET
- * 
- * Utiliza libcurl para realizar la solicitud HTTP.
- * 
- * @param url URL completa de la solicitud
- * @return Respuesta como string, o string vacío en caso de error
- */
 std::string Device_t::httpGet(const std::string& url) {
     CURL* curl;
     CURLcode res;
@@ -144,7 +243,7 @@ std::string Device_t::httpGet(const std::string& url) {
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);  // Timeout de 10 segundos
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
         
         res = curl_easy_perform(curl);
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
@@ -167,19 +266,12 @@ std::string Device_t::httpGet(const std::string& url) {
     return readBuffer;
 }
 
-/**
- * @brief Parsea la respuesta JSON y extrae la temperatura
- * 
- * @param jsonResponse Respuesta JSON de la API
- * @return Temperatura en grados Celsius
- */
 double Device_t::parseTemperature(const std::string& jsonResponse) {
     try {
         auto jsonData = json::parse(jsonResponse);
         
         if (jsonData.contains("main") && jsonData["main"].contains("temp")) {
-            double temperature = jsonData["main"]["temp"];
-            return temperature;
+            return jsonData["main"]["temp"];
         } else {
             std::cerr << "Device_t: No se encontró 'temp' en la respuesta JSON" << std::endl;
             return -999.0;
@@ -190,65 +282,25 @@ double Device_t::parseTemperature(const std::string& jsonResponse) {
     }
 }
 
-/**
- * @brief Muestra la temperatura en la pantalla OLED
- * 
- * Inicializa el display SSD1306 y muestra la temperatura formateada.
- * Usa la librería SSD1306 del sistema.
- * 
- * @param temperature Temperatura a mostrar
- * @param city Nombre de la ciudad
- */
 void Device_t::displayOnOLED(double temperature, const std::string& city) {
-    if (!m_hardwareInitialized) {
-        std::cerr << "Device_t: Hardware no inicializado, no se puede usar OLED" << std::endl;
-        return;
-    }
-    
-    try {
-        // Crear instancia del display OLED (128x64)
-        SSD1306 oled(128, 64);
+    #ifdef HAS_BCM2835
+        if (!m_hardwareInitialized) {
+            return;
+        }
         
-        // Inicializar OLED con I2C
-        // Parámetros: velocidad I2C (0=100kHz), dirección (0x3C), debug (false)
-        oled.OLEDbegin(0, SSD1306_ADDR, false);
+        oled_clear();
+        oled_text(0, 0, "TEMPERATURA");
+        oled_text(0, 16, city.c_str());
         
-        // Limpiar buffer
-        oled.OLEDclearBuffer();
-        
-        // Configurar texto
-        oled.setTextSize(1);
-        oled.setTextColor(WHITE);
-        oled.setCursor(0, 0);
-        
-        // Mostrar ciudad
-        oled.print("Ciudad: ");
-        oled.println(city.c_str());
-        
-        // Mostrar temperatura
-        oled.setCursor(0, 16);
-        oled.print("Temp: ");
-        oled.print(temperature);
-        oled.println(" C");
-        
-        // Actualizar display
-        oled.OLEDupdate();
+        // Convertir temperatura a string
+        char tempStr[20];
+        snprintf(tempStr, sizeof(tempStr), "%.1f C", temperature);
+        oled_text(0, 32, tempStr);
         
         std::cout << "Device_t: Temperatura mostrada en OLED" << std::endl;
-        
-    } catch (...) {
-        std::cerr << "Device_t: Error al inicializar OLED" << std::endl;
-    }
+    #endif
 }
 
-/**
- * @brief Muestra la temperatura por consola
- * 
- * Imprime la temperatura formateada en la salida estándar.
- * 
- * @param temperature Temperatura a mostrar
- * @param city Nombre de la ciudad
- */
 void Device_t::displayOnConsole(double temperature, const std::string& city) {
     std::cout << "========================================" << std::endl;
     std::cout << "  Temperatura Actual" << std::endl;
@@ -257,44 +309,49 @@ void Device_t::displayOnConsole(double temperature, const std::string& city) {
     std::cout << "========================================" << std::endl;
 }
 
-/**
- * @brief Método principal de ejecución del dispositivo
- * 
- * Este es el punto de entrada principal que ejecuta la lógica del dispositivo:
- * 1. Inicializa el hardware
- * 2. Obtiene la temperatura de la API
- * 3. Muestra la temperatura en OLED y consola
- * 4. Espera el intervalo de actualización y repite
- */
 void Device_t::run() {
     std::cout << "Device_t: Iniciando ejecución..." << std::endl;
     
-    // Inicializar hardware
     if (!initializeHardware()) {
-        std::cerr << "Device_t: Error al inicializar hardware" << std::endl;
-        std::cerr << "Device_t: La aplicación requiere Raspberry Pi con bcm2835" << std::endl;
-        return;
+        std::cerr << "Device_t: Hardware no disponible" << std::endl;
     }
     
-    // Bucle principal
+    // Mostrar mensaje inicial en OLED
+    #ifdef HAS_BCM2835
+        if (m_hardwareInitialized) {
+            oled_clear();
+            oled_text(0, 0, "TEMPERATURA");
+            oled_text(0, 16, "INICIANDO...");
+            std::cout << "Device_t: Mensaje inicial enviado a OLED" << std::endl;
+        }
+    #endif
+    
     while (true) {
-        // Obtener temperatura
         double temperature = fetchTemperature(m_city, m_country);
         
         if (temperature > -900.0) {
-            // Mostrar en OLED
             displayOnOLED(temperature, m_city);
-            
-            // Mostrar por consola
             displayOnConsole(temperature, m_city);
         } else {
             std::cerr << "Device_t: No se pudo obtener la temperatura" << std::endl;
+            
+            #ifdef HAS_BCM2835
+                if (m_hardwareInitialized) {
+                    oled_clear();
+                    oled_text(0, 0, "ERROR");
+                    oled_text(0, 16, "SIN DATOS");
+                }
+            #endif
         }
         
-        // Esperar antes de la próxima actualización
         std::cout << "Device_t: Esperando " << m_updateIntervalMs / 1000 
-                  << " segundos para la próxima actualización..." << std::endl;
-        bcm2835_delay(m_updateIntervalMs);
+                  << " segundos..." << std::endl;
+        
+        #ifdef HAS_BCM2835
+            bcm2835_delay(m_updateIntervalMs);
+        #else
+            std::this_thread::sleep_for(std::chrono::milliseconds(m_updateIntervalMs));
+        #endif
     }
 }
 

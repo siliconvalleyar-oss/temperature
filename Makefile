@@ -46,7 +46,7 @@ INCLUDES = -I$(INCDIR)
 # Objetivos
 # =============================================================================
 
-.PHONY: all clean distclean install help info
+.PHONY: all clean distclean install help info run
 
 # Objetivo principal
 all: $(TARGET)
