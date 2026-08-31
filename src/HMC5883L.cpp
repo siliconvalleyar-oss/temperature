@@ -61,9 +61,9 @@ bool HMC5883L::begin() {
         
         // Verificar ID del sensor
         uint8_t idA, idB, idC;
-        readRegister(REG Identification_A, idA);
-        readRegister(REG Identification_B, idB);
-        readRegister(REG Identification_C, idC);
+        readRegister(REG_Identification_A, idA);
+        readRegister(REG_Identification_B, idB);
+        readRegister(REG_Identification_C, idC);
         
         // HMC5883L retorna "H43" como ID
         if (idA != 'H' || idB != '4' || idC != '3') {
@@ -152,7 +152,7 @@ void HMC5883L::setRange(Range range) {
     m_currentRange = range;
     
     #ifdef HAS_BCM2835
-        uint8_t value;
+        uint8_t value = 0;
         readRegister(REG_Configuration_B, value);
         value = (value & 0xE0) | (range << 5);
         writeRegister(REG_Configuration_B, value);
@@ -167,7 +167,7 @@ void HMC5883L::setMode(Mode mode) {
     m_currentMode = mode;
     
     #ifdef HAS_BCM2835
-        writeRegister(REG_Mode, mode);
+        writeRegister(REG_Mode, static_cast<uint8_t>(mode));
     #endif
 }
 
@@ -177,7 +177,7 @@ void HMC5883L::setMode(Mode mode) {
  */
 bool HMC5883L::dataReady() {
     #ifdef HAS_BCM2835
-        uint8_t status;
+        uint8_t status = 0;
         readRegister(REG_Status, status);
         return (status & 0x01) != 0;
     #else
@@ -196,6 +196,8 @@ bool HMC5883L::writeRegister(uint8_t reg, uint8_t value) {
         char buf[2] = {static_cast<char>(reg), static_cast<char>(value)};
         return bcm2835_i2c_write(buf, 2) == BCM2835_I2C_REASON_OK;
     #else
+        (void)reg;
+        (void)value;
         return false;
     #endif
 }
@@ -209,11 +211,20 @@ bool HMC5883L::writeRegister(uint8_t reg, uint8_t value) {
 bool HMC5883L::readRegister(uint8_t reg, uint8_t& value) {
     #ifdef HAS_BCM2835
         char buf[1] = {static_cast<char>(reg)};
-        if (bcm2835_i2c_write_read(buf, 1, &value, 1) != BCM2835_I2C_REASON_OK) {
+        char data[1] = {0};
+        
+        // Escribir dirección de registro, luego leer
+        if (bcm2835_i2c_write(buf, 1) != BCM2835_I2C_REASON_OK) {
             return false;
         }
+        if (bcm2835_i2c_read(data, 1) != BCM2835_I2C_REASON_OK) {
+            return false;
+        }
+        
+        value = static_cast<uint8_t>(data[0]);
         return true;
     #else
+        (void)reg;
         value = 0;
         return false;
     #endif
@@ -229,8 +240,22 @@ bool HMC5883L::readRegister(uint8_t reg, uint8_t& value) {
 bool HMC5883L::readRegisters(uint8_t reg, uint8_t* buffer, size_t count) {
     #ifdef HAS_BCM2835
         char buf[1] = {static_cast<char>(reg)};
-        return bcm2835_i2c_write_read(buf, 1, reinterpret_cast<char*>(buffer), count) == BCM2835_I2C_REASON_OK;
+        
+        // Escribir dirección de registro
+        if (bcm2835_i2c_write(buf, 1) != BCM2835_I2C_REASON_OK) {
+            return false;
+        }
+        
+        // Leer datos
+        if (bcm2835_i2c_read(reinterpret_cast<char*>(buffer), count) != BCM2835_I2C_REASON_OK) {
+            return false;
+        }
+        
+        return true;
     #else
+        (void)reg;
+        (void)buffer;
+        (void)count;
         return false;
     #endif
 }
