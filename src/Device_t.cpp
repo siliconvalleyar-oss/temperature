@@ -1,15 +1,19 @@
 /**
  * @file Device_t.cpp
- * @brief Implementación de la clase Device_t
+ * @brief Implementación de la clase Device_t - Branch Raspberry
  * 
- * Implementa la lógica principal del dispositivo, incluyendo:
+ * Implementa la lógica principal del dispositivo para Raspberry Pi,
+ * incluyendo:
  * - Obtención de temperatura desde OpenWeatherMap API
- * - Display en pantalla OLED SSD1306 (solo en Raspberry Pi)
+ * - Display en pantalla OLED SSD1306 (usando librería del sistema)
  * - Salida por consola
  * 
  * @author Proyecto RaspberryPi
  * @version 0.1.0
  * @date 2026
+ * 
+ * @note Esta rama está diseñada exclusivamente para Raspberry Pi
+ *       y usa la librería SSD1306 instalada en el sistema
  */
 
 #include "Device_t.hpp"
@@ -17,16 +21,10 @@
 #include <sstream>
 #include <curl/curl.h>
 #include "nlohmann/json.hpp"
+#include <bcm2835.h>
 
-// Incluir OLED solo si está habilitado
-#ifdef HAS_OLED
-    #include "oled/SSD1306_OLED.hpp"
-#endif
-
-// Incluir bcm2835 solo si está habilitado
-#ifdef HAS_BCM2835
-    #include <bcm2835.h>
-#endif
+// Usar la librería SSD1306 del sistema (no local)
+#include <SSD1306_OLED.hpp>
 
 // Using para simplificar el uso de nlohmann::json
 using json = nlohmann::json;
@@ -70,44 +68,31 @@ Device_t::Device_t()
  */
 Device_t::~Device_t() {
     std::cout << "Device_t: Destructor llamado" << std::endl;
-    
-    #ifdef HAS_BCM2835
-        if (m_hardwareInitialized) {
-            bcm2835_close();
-        }
-    #endif
+    if (m_hardwareInitialized) {
+        bcm2835_close();
+    }
 }
 
 /**
  * @brief Inicializa el hardware del dispositivo
  * 
- * Intenta inicializar bcm2835 para acceso a GPIO/SPI/I2C.
- * Si bcm2835 no está disponible, continúa en modo simulación.
+ * Inicializa bcm2835 para acceso a GPIO/SPI/I2C.
+ * Requiere ejecutarse como root en Raspberry Pi.
  * 
  * @return true si la inicialización fue exitosa
  */
 bool Device_t::initializeHardware() {
     std::cout << "Device_t: Inicializando hardware..." << std::endl;
     
-    #ifdef HAS_BCM2835
-        // En Raspberry Pi real con bcm2835 habilitado
-        if (!bcm2835_init()) {
-            std::cerr << "Device_t: Error al inicializar bcm2835" << std::endl;
-            std::cerr << "Device_t: Verifique que está ejecutando como root" << std::endl;
-            m_hardwareInitialized = false;
-            return false;
-        }
-        m_hardwareInitialized = true;
-        std::cout << "Device_t: bcm2835 inicializado correctamente" << std::endl;
-    #else
-        // En modo PC o sin bcm2835
-        #ifdef __arm__
-            std::cout << "Device_t: ARM detectado pero bcm2835 no habilitado" << std::endl;
-        #else
-            std::cout << "Device_t: Modo PC (no se detectó Raspberry Pi)" << std::endl;
-        #endif
+    if (!bcm2835_init()) {
+        std::cerr << "Device_t: Error al inicializar bcm2835" << std::endl;
+        std::cerr << "Device_t: Verifique que está ejecutando como root" << std::endl;
         m_hardwareInitialized = false;
-    #endif
+        return false;
+    }
+    
+    m_hardwareInitialized = true;
+    std::cout << "Device_t: bcm2835 inicializado correctamente" << std::endl;
     
     return true;
 }
@@ -209,46 +194,51 @@ double Device_t::parseTemperature(const std::string& jsonResponse) {
  * @brief Muestra la temperatura en la pantalla OLED
  * 
  * Inicializa el display SSD1306 y muestra la temperatura formateada.
- * Solo funciona si OLED está habilitado y el hardware está disponible.
+ * Usa la librería SSD1306 del sistema.
  * 
  * @param temperature Temperatura a mostrar
  * @param city Nombre de la ciudad
  */
 void Device_t::displayOnOLED(double temperature, const std::string& city) {
-    #ifdef HAS_OLED
-        if (!m_hardwareInitialized) {
-            std::cout << "[OLED] Hardware no disponible - Modo simulación" << std::endl;
-            std::cout << "[OLED] Temperatura: " << temperature << "°C en " << city << std::endl;
-            return;
-        }
+    if (!m_hardwareInitialized) {
+        std::cerr << "Device_t: Hardware no inicializado, no se puede usar OLED" << std::endl;
+        return;
+    }
+    
+    try {
+        // Crear instancia del display OLED (128x64)
+        SSD1306 oled(128, 64);
         
-        // En hardware real con OLED habilitado
-        try {
-            SSD1306 oled(128, 64);
-            oled.OLEDbegin();
-            oled.OLEDclearBuffer();
-            
-            // Configurar texto
-            oled.setTextSize(1);
-            oled.setTextColor(WHITE);
-            oled.setCursor(0, 0);
-            oled.print("Ciudad: ");
-            oled.println(city.c_str());
-            
-            oled.setCursor(0, 16);
-            oled.print("Temp: ");
-            oled.print(temperature);
-            oled.println(" C");
-            
-            oled.OLEDupdate();
-        } catch (...) {
-            std::cerr << "Device_t: Error al inicializar OLED" << std::endl;
-        }
-    #else
-        // Modo PC sin OLED - solo mostrar en consola
-        std::cout << "[OLED] No disponible en modo PC" << std::endl;
-        std::cout << "[OLED] Temperatura: " << temperature << "°C en " << city << std::endl;
-    #endif
+        // Inicializar OLED con I2C
+        // Parámetros: velocidad I2C (0=100kHz), dirección (0x3C), debug (false)
+        oled.OLEDbegin(0, SSD1306_ADDR, false);
+        
+        // Limpiar buffer
+        oled.OLEDclearBuffer();
+        
+        // Configurar texto
+        oled.setTextSize(1);
+        oled.setTextColor(WHITE);
+        oled.setCursor(0, 0);
+        
+        // Mostrar ciudad
+        oled.print("Ciudad: ");
+        oled.println(city.c_str());
+        
+        // Mostrar temperatura
+        oled.setCursor(0, 16);
+        oled.print("Temp: ");
+        oled.print(temperature);
+        oled.println(" C");
+        
+        // Actualizar display
+        oled.OLEDupdate();
+        
+        std::cout << "Device_t: Temperatura mostrada en OLED" << std::endl;
+        
+    } catch (...) {
+        std::cerr << "Device_t: Error al inicializar OLED" << std::endl;
+    }
 }
 
 /**
@@ -282,7 +272,8 @@ void Device_t::run() {
     // Inicializar hardware
     if (!initializeHardware()) {
         std::cerr << "Device_t: Error al inicializar hardware" << std::endl;
-        // Continuar en modo simulación
+        std::cerr << "Device_t: La aplicación requiere Raspberry Pi con bcm2835" << std::endl;
+        return;
     }
     
     // Bucle principal
@@ -303,13 +294,7 @@ void Device_t::run() {
         // Esperar antes de la próxima actualización
         std::cout << "Device_t: Esperando " << m_updateIntervalMs / 1000 
                   << " segundos para la próxima actualización..." << std::endl;
-        
-        #ifdef HAS_BCM2835
-            bcm2835_delay(m_updateIntervalMs);
-        #else
-            // En PC, usar sleep estándar
-            std::this_thread::sleep_for(std::chrono::milliseconds(m_updateIntervalMs));
-        #endif
+        bcm2835_delay(m_updateIntervalMs);
     }
 }
 
