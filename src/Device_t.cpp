@@ -1,14 +1,11 @@
 /**
  * @file Device_t.cpp
- * @brief Implementación de la clase Device_t - Branch All
+ * @brief Implementación de la clase Device_t
  * 
- * Implementa la lógica principal del dispositivo, incluyendo:
- * - Obtención de temperatura desde OpenWeatherMap API
- * - Display en pantalla OLED SSD1306 (I2C directo)
- * - Salida por consola
+ * Usa Open-Meteo API (gratis, sin API key) para obtener clima.
  * 
  * @author Proyecto RaspberryPi
- * @version 0.1.0
+ * @version 0.2.0
  * @date 2026
  */
 
@@ -21,7 +18,6 @@
 #ifdef HAS_BCM2835
     #include <bcm2835.h>
     
-    // Dirección I2C del OLED
     #define OLED_ADDR 0x3C
     #define OLED_CMD 0x00
     #define OLED_DATA 0x40
@@ -29,9 +25,6 @@
 
 using json = nlohmann::json;
 
-/**
- * @brief Callback para curl
- */
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* s) {
     size_t newLength = size * nmemb;
     s->append((char*)contents, newLength);
@@ -41,32 +34,20 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::stri
 namespace Device {
 
 #ifdef HAS_BCM2835
-/**
- * @brief Escribe un byte al OLED via I2C
- */
 bool oled_write_byte(uint8_t reg, uint8_t data) {
     char buf[2] = {static_cast<char>(reg), static_cast<char>(data)};
     bcm2835_i2c_setSlaveAddress(OLED_ADDR);
     return bcm2835_i2c_write(buf, 2) == BCM2835_I2C_REASON_OK;
 }
 
-/**
- * @brief Envía un comando al OLED
- */
 void oled_command(uint8_t cmd) {
     oled_write_byte(OLED_CMD, cmd);
 }
 
-/**
- * @brief Envía datos al OLED
- */
 void oled_data(uint8_t data) {
     oled_write_byte(OLED_DATA, data);
 }
 
-/**
- * @brief Inicializa el OLED SSD1306
- */
 bool oled_init() {
     if (!bcm2835_i2c_begin()) {
         return false;
@@ -75,8 +56,7 @@ bool oled_init() {
     bcm2835_i2c_setSlaveAddress(OLED_ADDR);
     bcm2835_i2c_set_baudrate(100000);
     
-    // Secuencia de inicialización SSD1306
-    oled_command(0xAE); // Display OFF
+    oled_command(0xAE);
     oled_command(0xD5); oled_command(0x80);
     oled_command(0xA8); oled_command(0x3F);
     oled_command(0xD3); oled_command(0x00);
@@ -91,80 +71,66 @@ bool oled_init() {
     oled_command(0xDB); oled_command(0x40);
     oled_command(0xA4);
     oled_command(0xA6);
-    oled_command(0xAF); // Display ON
+    oled_command(0xAF);
     
     bcm2835_delay(100);
-    
     return true;
 }
 
-/**
- * @brief Limpia el buffer del OLED
- */
 void oled_clear() {
-    oled_command(0x21); // Columna
-    oled_command(0);
-    oled_command(127);
-    oled_command(0x22); // Página
-    oled_command(0);
-    oled_command(7);
-    
-    for (int i = 0; i < 1024; i++) {
-        oled_data(0x00);
-    }
+    oled_command(0x21); oled_command(0); oled_command(127);
+    oled_command(0x22); oled_command(0); oled_command(7);
+    for (int i = 0; i < 1024; i++) oled_data(0x00);
 }
 
-/**
- * @brief Muestra texto en el OLED (fuente básica 5x8)
- */
 void oled_text(int x, int y, const char* text) {
-    // Fuente básica 5x8 - solo mayúsculas y algunos caracteres
     static const uint8_t font[][5] = {
-        {0x00,0x00,0x00,0x00,0x00}, // Space
-        {0x7F,0x08,0x08,0x08,0x7F}, // H
-        {0x3E,0x41,0x41,0x41,0x3E}, // O
-        {0x7F,0x40,0x40,0x40,0x40}, // L
-        {0x7F,0x09,0x19,0x29,0x46}, // R
-        {0x3E,0x41,0x41,0x41,0x3E}, // O (same as O)
-        {0x7F,0x01,0x01,0x01,0x01}, // I
-        {0x3F,0x40,0x40,0x40,0x3F}, // U
-        {0x7F,0x09,0x19,0x29,0x46}, // R
-        {0x01,0x01,0x7F,0x01,0x01}, // T
-        {0x3E,0x41,0x41,0x51,0x73}, // E (approx)
-        {0x07,0x08,0x70,0x08,0x07}, // X (approx)
-        {0x7F,0x41,0x41,0x41,0x3E}, // D (approx)
-        {0x7F,0x49,0x49,0x49,0x41}, // M (approx)
-        {0x3E,0x41,0x41,0x41,0x3E}, // P (approx)
-        {0x7F,0x09,0x19,0x29,0x46}, // R
-        {0x7F,0x49,0x49,0x49,0x36}, // S (approx)
+        {0x00,0x00,0x00,0x00,0x00}, // Space (0)
+        {0x7F,0x08,0x08,0x08,0x7F}, // H (1)
+        {0x3E,0x41,0x41,0x41,0x3E}, // O (2)
+        {0x7F,0x40,0x40,0x40,0x40}, // L (3)
+        {0x7F,0x09,0x19,0x29,0x46}, // R (4)
+        {0x7F,0x01,0x01,0x01,0x01}, // I (5)
+        {0x3F,0x40,0x40,0x40,0x3F}, // U (6)
+        {0x01,0x01,0x7F,0x01,0x01}, // T (7)
+        {0x3E,0x41,0x41,0x51,0x73}, // E (8)
+        {0x07,0x08,0x70,0x08,0x07}, // X (9)
+        {0x3E,0x41,0x41,0x41,0x3E}, // D (10) - same as O
+        {0x7F,0x49,0x49,0x49,0x36}, // S (11)
+        {0x7F,0x49,0x49,0x49,0x41}, // M (12)
+        {0x3E,0x41,0x41,0x41,0x3E}, // P (13)
+        {0x7F,0x49,0x49,0x49,0x41}, // N (14)
+        {0x7F,0x09,0x19,0x29,0x46}, // R (15)
+        {0x3E,0x41,0x41,0x51,0x73}, // E (16)
+        {0x7F,0x09,0x19,0x29,0x46}, // A (17)
+        {0x7F,0x49,0x49,0x49,0x41}, // B (18)
+        {0x7F,0x09,0x19,0x29,0x46}, // C (19)
     };
     
-    // Posición en páginas
     int page = y / 8;
     int col = x;
     
-    oled_command(0x21); // Columna
-    oled_command(col);
-    oled_command(127);
-    oled_command(0x22); // Página
-    oled_command(page);
-    oled_command(page);
+    oled_command(0x21); oled_command(col); oled_command(127);
+    oled_command(0x22); oled_command(page); oled_command(page);
     
     for (int i = 0; text[i] != '\0' && col < 128; i++) {
         char c = text[i];
         int idx = 0;
         
         if (c >= 'A' && c <= 'Z') idx = c - 'A' + 1;
+        else if (c >= 'a' && c <= 'z') idx = c - 'a' + 1;
         else if (c == ' ') idx = 0;
-        else if (c == ':') idx = 5;
-        else if (c == '.') idx = 11;
-        else idx = 0;
+        else if (c == ':') idx = 2;
+        else if (c == '.') idx = 10;
+        else if (c == '-') idx = 9;
+        else if (c == '0') idx = 10;
+        else if (c >= '1' && c <= '9') idx = c - '0';
         
-        if (idx >= 0 && idx < 17) {
+        if (idx >= 0 && idx < 20) {
             for (int j = 0; j < 5; j++) {
                 oled_data(font[idx][j]);
             }
-            oled_data(0x00); // Espacio entre letras
+            oled_data(0x00);
         }
         col += 6;
     }
@@ -174,7 +140,7 @@ void oled_text(int x, int y, const char* text) {
 Device_t::Device_t()
     : m_city("Buenos Aires")
     , m_country("AR")
-    , m_apiKey("25647dfe3f88a205e55209d37e970b4d")
+    , m_apiKey("")
     , m_hardwareInitialized(false)
     , m_updateIntervalMs(60000)
 {
@@ -214,18 +180,70 @@ bool Device_t::initializeHardware() {
     #endif
 }
 
-double Device_t::fetchTemperature(const std::string& city, const std::string& country) {
-    std::string api_url = "http://api.openweathermap.org/data/2.5/weather?q=" 
-                         + city + "," + country 
-                         + "&appid=" + m_apiKey 
-                         + "&units=metric";
+/**
+ * @brief Obtiene coordenadas de una ciudad usando Geocoding API de Open-Meteo
+ * @return "lat,lon" o string vacío en caso de error
+ */
+std::string Device_t::getCoordinates(const std::string& city) {
+    std::string url = "https://geocoding-api.open-meteo.com/v1/search?name=" 
+                     + city + "&count=1&language=es";
     
-    std::cout << "Device_t: Obteniendo temperatura de " << city << "..." << std::endl;
-    
-    std::string response = httpGet(api_url);
+    std::string response = httpGet(url);
     
     if (response.empty()) {
-        std::cerr << "Device_t: Respuesta vacía de la API" << std::endl;
+        return "";
+    }
+    
+    try {
+        auto data = json::parse(response);
+        
+        if (data.contains("results") && data["results"].size() > 0) {
+            double lat = data["results"][0]["latitude"];
+            double lon = data["results"][0]["longitude"];
+            
+            std::ostringstream ss;
+            ss << lat << "," << lon;
+            return ss.str();
+        }
+    } catch (json::parse_error& e) {
+        std::cerr << "Device_t: Error al parsear geocoding: " << e.what() << std::endl;
+    }
+    
+    return "";
+}
+
+/**
+ * @brief Obtiene clima de Open-Meteo API (gratis, sin API key)
+ */
+double Device_t::fetchTemperature(const std::string& city, const std::string& country) {
+    // Primero obtener coordenadas
+    std::string coords = getCoordinates(city);
+    
+    if (coords.empty()) {
+        std::cerr << "Device_t: No se pudieron obtener coordenadas de " << city << std::endl;
+        return -999.0;
+    }
+    
+    // Separar lat y lon
+    size_t commaPos = coords.find(',');
+    if (commaPos == std::string::npos) {
+        return -999.0;
+    }
+    
+    std::string lat = coords.substr(0, commaPos);
+    std::string lon = coords.substr(commaPos + 1);
+    
+    // Construir URL de Open-Meteo
+    std::string url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat 
+                    + "&longitude=" + lon 
+                    + "&current_weather=true";
+    
+    std::cout << "Device_t: Obteniendo clima de " << city << "..." << std::endl;
+    
+    std::string response = httpGet(url);
+    
+    if (response.empty()) {
+        std::cerr << "Device_t: Respuesta vacía de Open-Meteo" << std::endl;
         return -999.0;
     }
     
@@ -266,14 +284,20 @@ std::string Device_t::httpGet(const std::string& url) {
     return readBuffer;
 }
 
+/**
+ * @brief Parsea la respuesta de Open-Meteo
+ * 
+ * Formato: { "current_weather": { "temperature": 22.5, ... } }
+ */
 double Device_t::parseTemperature(const std::string& jsonResponse) {
     try {
-        auto jsonData = json::parse(jsonResponse);
+        auto data = json::parse(jsonResponse);
         
-        if (jsonData.contains("main") && jsonData["main"].contains("temp")) {
-            return jsonData["main"]["temp"];
+        if (data.contains("current_weather") && 
+            data["current_weather"].contains("temperature")) {
+            return data["current_weather"]["temperature"];
         } else {
-            std::cerr << "Device_t: No se encontró 'temp' en la respuesta JSON" << std::endl;
+            std::cerr << "Device_t: No se encontró 'current_weather.temperature'" << std::endl;
             return -999.0;
         }
     } catch (json::parse_error& e) {
@@ -289,10 +313,9 @@ void Device_t::displayOnOLED(double temperature, const std::string& city) {
         }
         
         oled_clear();
-        oled_text(0, 0, "TEMPERATURA");
+        oled_text(0, 0, "CLIMA");
         oled_text(0, 16, city.c_str());
         
-        // Convertir temperatura a string
         char tempStr[20];
         snprintf(tempStr, sizeof(tempStr), "%.1f C", temperature);
         oled_text(0, 32, tempStr);
@@ -306,6 +329,7 @@ void Device_t::displayOnConsole(double temperature, const std::string& city) {
     std::cout << "  Temperatura Actual" << std::endl;
     std::cout << "  Ciudad: " << city << std::endl;
     std::cout << "  Temperatura: " << temperature << " °C" << std::endl;
+    std::cout << "  Fuente: Open-Meteo (gratis)" << std::endl;
     std::cout << "========================================" << std::endl;
 }
 
@@ -316,11 +340,10 @@ void Device_t::run() {
         std::cerr << "Device_t: Hardware no disponible" << std::endl;
     }
     
-    // Mostrar mensaje inicial en OLED
     #ifdef HAS_BCM2835
         if (m_hardwareInitialized) {
             oled_clear();
-            oled_text(0, 0, "TEMPERATURA");
+            oled_text(0, 0, "CLIMA");
             oled_text(0, 16, "INICIANDO...");
             std::cout << "Device_t: Mensaje inicial enviado a OLED" << std::endl;
         }
