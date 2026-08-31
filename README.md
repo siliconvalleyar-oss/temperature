@@ -20,7 +20,6 @@ Para usar solo en Raspberry Pi, ver la rama **raspberry**.
 - 💻 Salida por consola
 - 🔧 Compatible con Raspberry Pi 32 y 64 bits
 - 🖥️ Compatible con PC (x86/x64)
-- 📱 Soporte para magnetómetro HMC5883L
 - ⚙️ Configuración flexible
 - 📚 Documentación completa
 
@@ -217,12 +216,10 @@ OLED habilitado: no
 │   └── ...
 ├── include/                # Cabeceras
 │   ├── Device_t.hpp
-│   ├── HMC5883L.hpp
 │   └── oled/
 ├── src/                    # Código fuente
 │   ├── main.cpp
 │   ├── Device_t.cpp
-│   ├── HMC5883L.cpp
 │   └── oled/
 ├── scripts/                # Scripts
 │   ├── install_deps.sh
@@ -238,15 +235,6 @@ OLED habilitado: no
 
 | Pin OLED | Pin Raspberry Pi |
 |----------|------------------|
-| VCC | 3.3V (Pin 1) |
-| GND | GND (Pin 6) |
-| SDA | GPIO 0 (Pin 3) |
-| SCL | GPIO 1 (Pin 5) |
-
-### Magnetómetro HMC5883L
-
-| Pin HMC5883L | Pin Raspberry Pi |
-|--------------|------------------|
 | VCC | 3.3V (Pin 1) |
 | GND | GND (Pin 6) |
 | SDA | GPIO 0 (Pin 3) |

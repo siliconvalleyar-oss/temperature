@@ -28,8 +28,7 @@ DOCDIR = docs
 
 # Archivos fuente - NO incluir OLED local (usar librería del sistema)
 SOURCES = $(SRCDIR)/main.cpp \
-          $(SRCDIR)/Device_t.cpp \
-          $(SRCDIR)/HMC5883L.cpp
+          $(SRCDIR)/Device_t.cpp
 
 # Archivos objeto (manteniendo jerarquía)
 OBJECTS = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(SOURCES))
