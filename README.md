@@ -1,6 +1,17 @@
-# RaspberryPi Weather App
+# RaspberryPi Weather App - Branch Raspberry
 
 Aplicación para Raspberry Pi que muestra la temperatura actual de una ciudad usando la API de OpenWeatherMap, con display en pantalla OLED SSD1306 y salida por consola.
+
+## ⚠️ Esta Rama
+
+**Esta rama está diseñada exclusivamente para Raspberry Pi.**
+
+- ✅ Siempre compila con soporte OLED
+- ✅ Requiere bcm2835 (librería GPIO)
+- ✅ Requiere ejecutarse como root
+- ❌ No funciona en PC
+
+Para usar en PC, ver la rama **all**.
 
 ## Características
 
@@ -21,8 +32,7 @@ Aplicación para Raspberry Pi que muestra la temperatura actual de una ciudad us
   - Raspberry Pi 4 Model B
   - Raspberry Pi Zero/Zero W
 - Conexión a internet
-- Display OLED SSD1306 (opcional)
-- Magnetómetro HMC5883L (opcional)
+- Display OLED SSD1306 (conectado vía I2C)
 
 ### Software
 
@@ -33,11 +43,11 @@ Aplicación para Raspberry Pi que muestra la temperatura actual de una ciudad us
 
 ## Instalación
 
-### 1. Clonar repositorio
+### 1. Clonar repositorio (esta rama)
 
 ```bash
-git clone https://github.com/USUARIO/REPOSITORIO.git
-cd REPOSITORIO
+git clone -b raspberry https://github.com/siliconvalleyar-oss/temperature.git
+cd temperature
 ```
 
 ### 2. Instalar dependencias
@@ -49,12 +59,7 @@ sudo ./scripts/install_deps.sh
 ### 3. Compilar
 
 ```bash
-# Detecta automáticamente (RPi con OLED, PC sin OLED)
 make
-
-# O especificar opción OLED
-make OLED=yes   # Con soporte OLED (solo RPi)
-make OLED=no    # Sin soporte OLED
 ```
 
 ### 4. Configurar API Key
@@ -96,10 +101,18 @@ App v0.1.0
 ```
 ========================================
   RaspberryPi Weather App v0.1.0
+  Branch: raspberry
 ========================================
-Device_t: Iniciando ejecución...
+  OLED: Habilitado (SSD1306)
+  Hardware: Raspberry Pi (bcm2835)
+========================================
+
+Device_t: Constructor llamado
 Device_t: Ciudad configurada: Buenos Aires, AR
-Device_t: Obteniendo temperatura...
+Device_t: Iniciando ejecución...
+Device_t: Inicializando hardware...
+Device_t: bcm2835 inicializado correctamente
+Device_t: Obteniendo temperatura de Buenos Aires...
 ========================================
   Temperatura Actual
   Ciudad: Buenos Aires
@@ -190,15 +203,12 @@ make help      # Ver ayuda
 make info      # Ver información del proyecto
 ```
 
-### Compilar con opciones
+## Ramas
 
-```bash
-# Debug
-make CXXFLAGS="-g -O0"
-
-# Optimizado
-make CXXFLAGS="-O3 -march=native"
-```
+| Rama | Descripción |
+|------|-------------|
+| `raspberry` | Solo Raspberry Pi con OLED (esta rama) |
+| `all` | Compatible con PC y Raspberry Pi |
 
 ## Documentación
 

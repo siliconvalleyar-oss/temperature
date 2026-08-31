@@ -12,6 +12,9 @@
  * @author Proyecto RaspberryPi
  * @version 0.1.0
  * @date 2026
+ * 
+ * @note Esta rama (raspberry) está diseñada exclusivamente para
+ *       Raspberry Pi con soporte OLED habilitado.
  */
 
 #include <iostream>
@@ -44,20 +47,10 @@ int main(int argc, char* argv[]) {
     // Mostrar versión y información del sistema
     std::cout << "========================================" << std::endl;
     std::cout << "  RaspberryPi Weather App v" << VERSION << std::endl;
+    std::cout << "  Branch: raspberry" << std::endl;
     std::cout << "========================================" << std::endl;
-    
-    #ifdef HAS_OLED
-        std::cout << "  OLED: Habilitado (SSD1306)" << std::endl;
-    #else
-        std::cout << "  OLED: Deshabilitado (modo PC)" << std::endl;
-    #endif
-    
-    #ifdef HAS_BCM2835
-        std::cout << "  Hardware: Raspberry Pi (bcm2835)" << std::endl;
-    #else
-        std::cout << "  Hardware: Modo PC (sin bcm2835)" << std::endl;
-    #endif
-    
+    std::cout << "  OLED: Habilitado (SSD1306)" << std::endl;
+    std::cout << "  Hardware: Raspberry Pi (bcm2835)" << std::endl;
     std::cout << "========================================" << std::endl;
     std::cout << std::endl;
     
