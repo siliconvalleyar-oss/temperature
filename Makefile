@@ -37,8 +37,8 @@ OBJECTS = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(SOURCES))
 # Archivo binario final
 TARGET = $(BINDIR)/App
 
-# Librerías - bcm2835 y libcurl
-LIBS = -lbcm2835 -lcurl -lpthread
+# Librerías - bcm2835, libcurl y SSD1306 del sistema
+LIBS = -lbcm2835 -lcurl -lpthread -lSSD1306_OLED_RPI
 
 # Include paths - usar librería del sistema
 INCLUDES = -I$(INCDIR)
