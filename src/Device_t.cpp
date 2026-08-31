@@ -185,8 +185,14 @@ bool Device_t::initializeHardware() {
  * @return "lat,lon" o string vacío en caso de error
  */
 std::string Device_t::getCoordinates(const std::string& city) {
+    // Reemplazar espacios con + para URL encoding
+    std::string encodedCity = city;
+    for (char& c : encodedCity) {
+        if (c == ' ') c = '+';
+    }
+    
     std::string url = "https://geocoding-api.open-meteo.com/v1/search?name=" 
-                     + city + "&count=1&language=es";
+                     + encodedCity + "&count=1&language=es";
     
     std::string response = httpGet(url);
     
