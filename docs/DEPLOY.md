@@ -1,420 +1,312 @@
-# DEPLOY - Guía de Despliegue
+# DEPLOY - Guía de Despliegue Remoto
 
 ## Visión General
 
-Este documento describe cómo desplegar el proyecto RaspberryPi Weather App
-en producción.
+Este documento describe cómo desplegar y compilar el proyecto de forma remota en una Raspberry Pi.
 
 ---
 
 ## Requisitos
 
-### Hardware
+### Local (PC de desarrollo)
 
-- Raspberry Pi (32 o 64 bits)
-- Tarjeta microSD (mínimo 8GB)
-- Fuente de poder (5V 3A)
-- Conexión a internet
+- Git
+- SSH client
+- Acco a internet
 
-### Software
+### Remoto (Raspberry Pi)
 
 - Raspbian/Raspberry Pi OS
-- Dependencias instaladas
+- SSH habilitado
+- Acceso a internet
+- GCC/G++ instalado
 
 ---
 
-## Despliegue Manual
+## Configuración Inicial
 
-### 1. Preparar Raspberry Pi
+### 1. Configurar SSH sin contraseña
+
+Desde tu PC, ejecuta:
 
 ```bash
-# Actualizar sistema
-sudo apt-get update && sudo apt-get upgrade -y
+# Generar clave SSH (si no tienes una)
+ssh-keygen -t rsa -b 4096
 
-# Habilitar I2C
-sudo raspi-config
-# Interfacing Options → I2C → Enable
-
-# Reiniciar
-sudo reboot
+# Copiar clave a la Raspberry Pi
+ssh-copy-id joy@raspberry.local
 ```
 
-### 2. Instalar Aplicación
+**Nota:** Si usas una IP en lugar de hostname:
 
 ```bash
-# Clonar repositorio
-git clone https://github.com/USUARIO/REPOSITORIO.git
-cd REPOSITORIO
-
-# Instalar dependencias
-sudo ./scripts/install_deps.sh
-
-# Compilar
-make
-
-# Instalar en /usr/local/bin
-sudo make install
+ssh-copy-id joy@192.168.1.100
 ```
 
-### 3. Configurar
+### 2. Verificar conexión
 
 ```bash
-# Editar configuración
-sudo nano /usr/local/bin/config/config.cfg
+# Probar conexión sin contraseña
+ssh joy@raspberry.local "echo '✅ Conexión exitosa'"
 
-# Configurar API key y ciudad
-[weather]
-api_key = TU_API_KEY
-city = Buenos Aires
-country = AR
-```
-
-### 4. Ejecutar
-
-```bash
-# Ejecutar manualmente
-sudo /usr/local/bin/App
-
-# O con systemd (ver abajo)
+# O usar el Makefile
+make ssh-test
 ```
 
 ---
 
-## Despliegue con systemd
+## Despliegue con Make
 
-### Crear Servicio
-
-```bash
-sudo nano /etc/systemd/system/weather.service
-```
-
-Contenido:
-```ini
-[Unit]
-Description=RaspberryPi Weather App
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/usr/local/bin
-ExecStart=/usr/local/bin/App
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Habilitar Servicio
+### Comandos disponibles
 
 ```bash
-# Recargar systemd
-sudo systemctl daemon-reload
+# Ver ayuda completa
+make help
 
-# Habilitar inicio automático
-sudo systemctl enable weather.service
+# Despliegue completo (clonar + compilar)
+make deploy-all
 
-# Iniciar servicio
-sudo systemctl start weather.service
+# Probar conexión SSH
+make ssh-test
+
+# Clonar repositorio en RPi
+make deploy-clone
+
+# Compilar en RPi
+make deploy-build
+
+# Ejecutar en RPi
+make deploy-run
+
+# Ver estado en RPi
+make deploy-status
+
+# Conectar a RPi
+make ssh
+```
+
+### Configurar host/usuario
+
+```bash
+# Usar IP específica
+make deploy-all RPI_HOST=192.168.1.100
+
+# Usar usuario diferente
+make deploy-all RPI_USER=pi
+
+# Combinar
+make deploy-all RPI_USER=pi RPI_HOST=192.168.1.50
+```
+
+---
+
+## Despliegue con Script
+
+### Uso básico
+
+```bash
+# Despliegue completo
+./scripts/deploy.sh
+
+# Ver ayuda
+./scripts/deploy.sh --help
+```
+
+### Opciones del script
+
+```bash
+# Probar conexión
+./scripts/deploy.sh --test
+
+# Solo clonar
+./scripts/deploy.sh --clone
+
+# Solo compilar
+./scripts/deploy.sh --build
+
+# Solo ejecutar
+./scripts/deploy.sh --run
 
 # Ver estado
-sudo systemctl status weather.service
+./scripts/deploy.sh --status
 ```
 
-### Comandos Útiles
+### Configurar host/usuario
 
 ```bash
-# Ver logs
-sudo journalctl -u weather.service -f
+# IP específica
+./scripts/deploy.sh --host 192.168.1.100
 
-# Detener servicio
-sudo systemctl stop weather.service
+# Usuario específico
+./scripts/deploy.sh --user pi --host 192.168.1.50
 
-# Reiniciar servicio
-sudo systemctl restart weather.service
-
-# Deshabilitar servicio
-sudo systemctl disable weather.service
+# Usando variables de entorno
+RPI_USER=pi RPI_HOST=192.168.1.50 ./scripts/deploy.sh
 ```
 
 ---
 
-## Despliegue Remoto
+## Flujo de Trabajo Completo
 
-### Usando SSH
+### Desde cero
 
 ```bash
-# Copiar archivos a Raspberry Pi
-scp -r ./bin/App pi@raspberrypi:/home/pi/
+# 1. Clonar repositorio local
+git clone https://github.com/siliconvalleyar-oss/temperature.git
+cd temperature
 
-# Conectar
-ssh pi@raspberrypi
+# 2. Configurar SSH (una vez)
+ssh-keygen -t rsa -b 4096
+ssh-copy-id joy@raspberry.local
 
-# Ejecutar
-sudo ./App
+# 3. Desplegar en RPi
+make deploy-all
+
+# 4. Conectar para verificar
+make ssh
+cd ~/src/temperature
+sudo ./bin/App
 ```
 
-### Usando Ansible
+### Actualizaciones
 
-Crear playbook:
-```yaml
----
-- hosts: raspberrypi
-  become: yes
-  tasks:
-    - name: Instalar dependencias
-      script: scripts/install_deps.sh
-    
-    - name: Copiar binario
-      copy:
-        src: bin/App
-        dest: /usr/local/bin/App
-        mode: '0755'
-    
-    - name: Copiar configuración
-      copy:
-        src: config/config.cfg
-        dest: /usr/local/bin/config/config.cfg
-        mode: '0600'
-    
-    - name: Iniciar servicio
-      systemd:
-        name: weather
-        state: started
-        enabled: yes
-```
-
-Ejecutar:
 ```bash
-ansible-playbook -i inventory deploy.yml
+# En local: hacer cambios
+git add .
+git commit -m "feat: nueva funcionalidad"
+git push
+
+# En RPi: actualizar
+make deploy-build
+
+# O ejecutar todo junto
+make deploy-all
 ```
 
 ---
 
-## Despliegue con Docker (Experimental)
+## Comando SSH Directo
 
-### Dockerfile
+### Formato del usuario
 
-```dockerfile
-FROM arm32v7/debian:bullseye
-
-RUN apt-get update && apt-get install -y \
-    g++ \
-    make \
-    libbcm2835-dev \
-    libcurl4-openssl-dev \
-    nlohmann-json3-dev
-
-WORKDIR /app
-COPY . .
-
-RUN make
-
-CMD ["./bin/App"]
+```
+ssh joy@raspberry.local "cd /home/joy/src && git clone temperature && cd temperature && git pull && make clean && make -j4 && sudo ./bin/App"
 ```
 
-### Construir y Ejecutar
+### Desglose
 
-```bash
-# Construir imagen
-docker build -t weather-app .
-
-# Ejecutar
-docker run --privileged weather-app
-```
-
-**Nota**: Docker en Raspberry Pi requiere `--privileged` para acceso a GPIO.
+| Paso | Comando |
+|------|---------|
+| Conectar | `ssh joy@raspberry.local` |
+| Ir a src | `cd /home/joy/src` |
+| Clonar | `git clone temperature` |
+| Entrar al proyecto | `cd temperature` |
+| Actualizar | `git pull` |
+| Limpiar | `make clean` |
+| Compilar | `make -j4` |
+| Ejecutar | `sudo ./bin/App` |
 
 ---
 
-## Monitoreo
+## Solución de Problemas
 
-### Ver Logs
+### Error: "Permission denied (publickey)"
 
+**Solución:**
 ```bash
-# Logs de systemd
-sudo journalctl -u weather.service -f
+# Copiar clave SSH
+ssh-copy-id joy@raspberry.local
 
-# Logs de la aplicación
-tail -f /var/log/weather.log
-
-# Logs del sistema
-tail -f /var/log/syslog
-```
-
-### Monitoreo de Recursos
-
-```bash
-# Ver uso de CPU y memoria
-htop
-
-# Ver uso de memoria
-free -h
-
-# Ver procesos
-ps aux | grep App
-```
-
-### Monitoreo de Red
-
-```bash
-# Ver conexiones activas
-netstat -tuln
-
-# Ver tráfico
-iftop
-```
-
----
-
-## Actualizaciones
-
-### Actualizar Aplicación
-
-```bash
-# Detener servicio
-sudo systemctl stop weather.service
-
-# Actualizar código
-cd /usr/local/bin
-git pull origin main
-
-# Recompilar
-make clean && make
-
-# Reiniciar servicio
-sudo systemctl start weather.service
-```
-
-### Actualizar Dependencias
-
-```bash
-# Actualizar sistema
-sudo apt-get update && sudo apt-get upgrade -y
-
-# Reinstalar dependencias del proyecto
-sudo ./scripts/install_deps.sh
-
-# Recompilar
-make clean && make
-```
-
----
-
-## Backup
-
-### Respaldar Configuración
-
-```bash
-# Respaldar configuración
-tar -czvf backup_config_$(date +%Y%m%d).tar.gz config/
-
-# Respaldar binario
-cp bin/App bin/App.backup
-```
-
-### Restaurar Configuración
-
-```bash
-# Restaurar configuración
-tar -xzvf backup_config_20260830.tar.gz
-
-# Reiniciar servicio
-sudo systemctl restart weather.service
-```
-
----
-
-## Rollback
-
-### Revertir a Versión Anterior
-
-```bash
-# Detener servicio
-sudo systemctl stop weather.service
-
-# Restaurar binario anterior
-cp bin/App.backup bin/App
-
-# Reiniciar servicio
-sudo systemctl start weather.service
-```
-
-### Revertir Cambios de Código
-
-```bash
-# Ver historial
-git log --oneline
-
-# Revertir a commit específico
-git revert <commit-hash>
-
-# Recompilar
-make clean && make
-
-# Reiniciar servicio
-sudo systemctl restart weather.service
-```
-
----
-
-## Troubleshooting
-
-### Servicio no inicia
-
-```bash
-# Ver logs de error
-sudo journalctl -u weather.service -n 50
-
-# Verificar estado
-sudo systemctl status weather.service
-
-# Probar ejecución manual
-sudo /usr/local/bin/App
-```
-
-### No hay conexión a API
-
-```bash
-# Verificar red
-ping google.com
-
-# Probar API directamente
-curl "http://api.openweathermap.org/data/2.5/weather?q=Buenos Aires,AR&appid=TU_API_KEY"
-
-# Verificar DNS
-nslookup api.openweathermap.org
-```
-
-### GPIO no funciona
-
-```bash
 # Verificar permisos
-ls -l /dev/gpiomem
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/id_rsa
+```
 
-# Verificar I2C
-sudo i2cdetect -y 1
+### Error: "Host key verification failed"
 
-# Verificar módulos
-lsmod | grep i2c_bcm2835
+**Solución:**
+```bash
+# Agregar host a known_hosts
+ssh-keyscan -H raspberry.local >> ~/.ssh/known_hosts
+
+# O conectar una vez manualmente
+ssh joy@raspberry.local
+```
+
+### Error: "Could not resolve hostname"
+
+**Solución:**
+```bash
+# Verificar hostname
+ping raspberry.local
+
+# Usar IP en lugar de hostname
+ping 192.168.1.100
+
+# Configurar en /etc/hosts
+echo "192.168.1.100 raspberry.local" | sudo tee -a /etc/hosts
+```
+
+### Error: "make: *** No targets specified"
+
+**Solución:**
+```bash
+# Verificar que el repositorio existe
+ssh joy@raspberry.local "ls -la ~/src/temperature"
+
+# Si no existe, clonar primero
+make deploy-clone
+```
+
+---
+
+## Scripts Útiles
+
+### SSH Config (~/.ssh/config)
+
+```
+Host raspberry
+    HostName raspberry.local
+    User joy
+    IdentityFile ~/.ssh/id_rsa
+
+Host raspberry-ip
+    HostName 192.168.1.100
+    User joy
+    IdentityFile ~/.ssh/id_rsa
+```
+
+Con esto puedes usar:
+```bash
+ssh raspberry
+make deploy-all RPI_HOST=raspberry
+```
+
+### Alias para shell (~/.bashrc)
+
+```bash
+# Desplegar en RPi
+alias deploy-rpi='make deploy-all RPI_HOST=raspberry.local'
+
+# Conectar a RPi
+alias rpi='ssh joy@raspberry.local'
+
+# Ver estado RPi
+alias rpi-status='make deploy-status'
 ```
 
 ---
 
 ## Seguridad
 
-### Permisos
+### Recomendaciones
 
-```bash
-# Configuración protegida
-chmod 600 /usr/local/bin/config/config.cfg
+1. **Usar SSH keys** en lugar de contraseñas
+2. **Restringir acceso** por IP en la RPi
+3. **No exponer** la RPi a internet
+4. **Usar VPN** si es necesario acceder remotamente
 
-# Binario ejecutable solo por root
-chmod 700 /usr/local/bin/App
-```
-
-### Firewall
+### Configurar firewall en RPi
 
 ```bash
 # Instalar ufw
@@ -423,7 +315,7 @@ sudo apt-get install ufw
 # Permitir solo SSH
 sudo ufw allow ssh
 
-# Habilitar firewall
+# Habilitar
 sudo ufw enable
 ```
 
@@ -433,4 +325,5 @@ sudo ufw enable
 
 - [Guía de Uso](USAGE.md)
 - [Compilación](BUILD.md)
+- [Hardware](HARDWARE.md)
 - [Solución de Problemas](TROUBLESHOOTING.md)

@@ -12,9 +12,21 @@ VERSION := $(shell cat VERSION 2>/dev/null || echo "0.1.0")
 CXX = g++
 CC = gcc
 
-# Flags de compilación
+# Flags de compilación (C++14 para make_unique)
 CXXFLAGS = -std=c++14 -Wall -Wextra -O2
 CFLAGS = -Wall -Wextra -O2
+
+# =============================================================================
+# Configuración SSH Remota
+# =============================================================================
+
+# Usuario y host de la Raspberry Pi remota
+RPI_USER ?= joy
+RPI_HOST ?= raspberry.local
+RPI_SRC_DIR ?= /home/$(RPI_USER)/src
+
+# Comando SSH
+SSH_CMD = ssh $(RPI_USER)@$(RPI_HOST)
 
 # =============================================================================
 # Detección de Raspberry Pi
@@ -107,10 +119,12 @@ TARGET = $(BINDIR)/App
 INCLUDES = -I$(INCDIR)
 
 # =============================================================================
-# Objetivos
+# Objetivos Locales
 # =============================================================================
 
-.PHONY: all clean distclean install help info yes no
+.PHONY: all clean distclean install help info oled noled \
+        deploy deploy-clean deploy-run deploy-all \
+        ssh-test ssh-clean ssh-rebuild
 
 # Objetivo principal
 all: $(TARGET)
@@ -188,6 +202,137 @@ noled: clean
 	$(MAKE) OLED=no
 
 # =============================================================================
+# Despliegue Remoto en Raspberry Pi
+# =============================================================================
+
+# Verificar conexión SSH
+ssh-test:
+	@echo "Probando conexión SSH a $(RPI_USER)@$(RPI_HOST)..."
+	$(SSH_CMD) "echo '✅ Conexión SSH exitosa'" || \
+		(echo "❌ Error: No se pudo conectar. Verifique:"; \
+		 echo "  1. SSH keys configuradas: ssh-copy-id $(RPI_USER)@$(RPI_HOST)"; \
+		 echo "  2. Raspberry Pi encendida y en la red"; \
+		 echo "  3. Hostname correcto: $(RPI_HOST)"; \
+		 exit 1)
+
+# Clonar repositorio en Raspberry Pi
+deploy-clone:
+	@echo "========================================"
+	@echo "  Desplegando en Raspberry Pi"
+	@echo "  Host: $(RPI_USER)@$(RPI_HOST)"
+	@echo "========================================"
+	@echo ""
+	@echo "Creando directorio src..."
+	$(SSH_CMD) "mkdir -p $(RPI_SRC_DIR)"
+	@echo ""
+	@echo "Clonando repositorio..."
+	$(SSH_CMD) "cd $(RPI_SRC_DIR) && \
+		if [ -d temperature ]; then \
+			echo 'Repositorio ya existe, actualizando...'; \
+			cd temperature && git pull; \
+		else \
+			git clone https://github.com/siliconvalleyar-oss/temperature.git && \
+			cd temperature; \
+		fi"
+	@echo ""
+	@echo "✅ Repositorio clonado/actualizado"
+
+# Compilar en Raspberry Pi
+deploy-build:
+	@echo "========================================"
+	@echo "  Compilando en Raspberry Pi"
+	@echo "  Host: $(RPI_USER)@$(RPI_HOST)"
+	@echo "========================================"
+	@echo ""
+	@echo "Instalando dependencias..."
+	$(SSH_CMD) "cd $(RPI_SRC_DIR)/temperature && \
+		sudo ./scripts/install_deps.sh" || true
+	@echo ""
+	@echo "Compilando..."
+	$(SSH_CMD) "cd $(RPI_SRC_DIR)/temperature && \
+		make clean && make -j4"
+	@echo ""
+	@echo "✅ Compilación exitosa"
+
+# Ejecutar en Raspberry Pi
+deploy-run:
+	@echo "========================================"
+	@echo "  Ejecutando en Raspberry Pi"
+	@echo "  Host: $(RPI_USER)@$(RPI_HOST)"
+	@echo "========================================"
+	@echo ""
+	@echo "Ejecutando aplicación..."
+	$(SSH_CMD) "cd $(RPI_SRC_DIR)/temperature && \
+		sudo ./bin/App"
+	@echo ""
+
+# Despliegue completo (clonar + compilar + ejecutar)
+deploy-all:
+	@echo "========================================"
+	@echo "  Despliegue Completo en Raspberry Pi"
+	@echo "  Host: $(RPI_USER)@$(RPI_HOST)"
+	@echo "  Repositorio: temperature"
+	@echo "========================================"
+	@echo ""
+	$(SSH_CMD) "cd $(RPI_SRC_DIR) && \
+		mkdir -p . && \
+		if [ -d temperature ]; then \
+			echo '📦 Repositorio ya existe, actualizando...'; \
+			cd temperature && git pull; \
+		else \
+			echo '📦 Clonando repositorio...'; \
+			git clone https://github.com/siliconvalleyar-oss/temperature.git && \
+			cd temperature; \
+		fi && \
+		echo '' && \
+		echo '🔧 Instalando dependencias...' && \
+		sudo ./scripts/install_deps.sh && \
+		echo '' && \
+		echo '🔨 Compilando...' && \
+		make clean && make -j4 && \
+		echo '' && \
+		echo '✅ Compilación exitosa!' && \
+		echo '' && \
+		echo '🚀 Ejecutando aplicación...' && \
+		sudo ./bin/App"
+	@echo ""
+
+# Limpiar en Raspberry Pi
+deploy-clean:
+	@echo "Limpiando en Raspberry Pi..."
+	$(SSH_CMD) "cd $(RPI_SRC_DIR)/temperature && make distclean" || true
+	@echo "✅ Limpieza completada"
+
+# Ver estado del repositorio en Raspberry Pi
+deploy-status:
+	@echo "========================================"
+	@echo "  Estado en Raspberry Pi"
+	@echo "  Host: $(RPI_USER)@$(RPI_HOST)"
+	@echo "========================================"
+	@echo ""
+	$(SSH_CMD) "cd $(RPI_SRC_DIR)/temperature && \
+		echo '📂 Directorio:' && pwd && \
+		echo '' && \
+		echo '🌿 Ramas:' && git branch && \
+		echo '' && \
+		echo '📝 Último commit:' && git log --oneline -1 && \
+		echo '' && \
+	echo '📊 Estado:' && git status --short"
+
+# =============================================================================
+# Comandos SSH Directos
+# =============================================================================
+
+# Conectar a Raspberry Pi
+ssh:
+	$(SSH_CMD)
+
+# Ejecutar comando remoto
+ssh-cmd:
+	@echo "Ejecutando: $(CMD)"
+	$(SSH_CMD) "$(CMD)"
+
+# =============================================================================
 # Ayuda
 # =============================================================================
 
@@ -198,26 +343,40 @@ help:
 	@echo ""
 	@echo "Uso: make [objetivo] [OLED=yes|no]"
 	@echo ""
-	@echo "Objetivos:"
+	@echo "--- Compilación Local ---"
 	@echo "  all        - Compilar el proyecto (por defecto)"
 	@echo "  clean      - Limpiar archivos objeto"
 	@echo "  distclean  - Limpiar todo (objetos + binario)"
 	@echo "  install    - Instalar en /usr/local/bin"
 	@echo "  oled       - Compilar CON soporte OLED"
 	@echo "  noled      - Compilar SIN soporte OLED"
+	@echo ""
+	@echo "--- Despliegue Remoto (Raspberry Pi) ---"
+	@echo "  ssh-test      - Probar conexión SSH"
+	@echo "  deploy-all    - Clonar + Compilar + Ejecutar (todo en uno)"
+	@echo "  deploy-clone  - Clonar repositorio en RPi"
+	@echo "  deploy-build  - Compilar en RPi"
+	@echo "  deploy-run    - Ejecutar en RPi"
+	@echo "  deploy-clean  - Limpiar en RPi"
+	@echo "  deploy-status - Ver estado en RPi"
+	@echo ""
+	@echo "--- SSH ---"
+	@echo "  ssh           - Conectar a RPi"
+	@echo ""
+	@echo "--- Utilidades ---"
 	@echo "  help       - Mostrar esta ayuda"
 	@echo "  info       - Mostrar información del sistema"
 	@echo ""
-	@echo "Opciones:"
-	@echo "  OLED=yes   - Habilitar soporte OLED (requiere bcm2835)"
-	@echo "  OLED=no    - Deshabilitar soporte OLED"
+	@echo "Configuración SSH Remota:"
+	@echo "  RPI_USER=$(RPI_USER)"
+	@echo "  RPI_HOST=$(RPI_HOST)"
+	@echo "  RPI_SRC_DIR=$(RPI_SRC_DIR)"
 	@echo ""
 	@echo "Ejemplos:"
-	@echo "  make                    # Compilar (detecta automáticamente)"
-	@echo "  make OLED=yes           # Forzar OLED habilitado"
-	@echo "  make OLED=no            # Forzar OLED deshabilitado"
-	@echo "  make oled               # Limpiar y compilar con OLED"
-	@echo "  make noled              # Limpiar y compilar sin OLED"
+	@echo "  make deploy-all              # Despliegue completo"
+	@echo "  make deploy-all RPI_HOST=192.168.1.100  # Con IP específica"
+	@echo "  make ssh-test                # Probar conexión"
+	@echo "  make ssh                     # Conectar a RPi"
 	@echo ""
 	@echo "Plataforma detectada:"
 	@echo "  Arquitectura: $(ARCH)"
@@ -240,6 +399,11 @@ info:
 	@echo "Arquitectura: $(ARCH)"
 	@echo "Raspberry Pi: $(IS_RASPBERRY_PI)"
 	@echo "OLED habilitado: $(OLED)"
+	@echo ""
+	@echo "Configuración SSH Remota:"
+	@echo "  Usuario: $(RPI_USER)"
+	@echo "  Host: $(RPI_HOST)"
+	@echo "  Directorio: $(RPI_SRC_DIR)"
 	@echo ""
 	@echo "Flags:"
 	@echo "  CXXFLAGS: $(CXXFLAGS)"
