@@ -1,0 +1,1 @@
+/bin/c++ CMakeFiles/weather_project.dir/main.cc.o -o weather_project  /usr/lib/arm-linux-gnueabihf/libcurl.so 

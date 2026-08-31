@@ -1,0 +1,3 @@
+/home/pi/src/temperature/build/CMakeFiles/rebuild_cache.dir
+/home/pi/src/temperature/build/CMakeFiles/edit_cache.dir
+/home/pi/src/temperature/build/CMakeFiles/weather_project.dir
