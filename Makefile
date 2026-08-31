@@ -2,7 +2,7 @@
 # Makefile para Proyecto RaspberryPi Weather App - Branch Raspberry
 # =============================================================================
 # Este Makefile está diseñado específicamente para Raspberry Pi.
-# Siempre compila con soporte OLED y bcm2835.
+# Siempre compila con soporte OLED (usando librería del sistema) y bcm2835.
 # =============================================================================
 
 # Leer versión del archivo VERSION
@@ -26,14 +26,9 @@ OBJDIR = obj
 BINDIR = bin
 DOCDIR = docs
 
-# Archivos fuente - Siempre incluir OLED
+# Archivos fuente - NO incluir OLED local (usar librería del sistema)
 SOURCES = $(SRCDIR)/main.cpp \
-          $(SRCDIR)/Device_t.cpp \
-          $(SRCDIR)/HMC5883L.cpp \
-          $(SRCDIR)/oled/SSD1306_OLED.cpp \
-          $(SRCDIR)/oled/SSD1306_OLED_font.cpp \
-          $(SRCDIR)/oled/SSD1306_OLED_graphics.cpp \
-          $(SRCDIR)/oled/SSD1306_OLED_Print.cpp
+          $(SRCDIR)/Device_t.cpp
 
 # Archivos objeto (manteniendo jerarquía)
 OBJECTS = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(SOURCES))
@@ -41,17 +36,17 @@ OBJECTS = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(SOURCES))
 # Archivo binario final
 TARGET = $(BINDIR)/App
 
-# Librerías - Siempre incluir bcm2835
-LIBS = -lbcm2835 -lcurl -lpthread
+# Librerías - bcm2835, libcurl y SSD1306 del sistema
+LIBS = -lbcm2835 -lcurl -lpthread -lSSD1306_OLED_RPI
 
-# Include paths
+# Include paths - usar librería del sistema
 INCLUDES = -I$(INCDIR)
 
 # =============================================================================
 # Objetivos
 # =============================================================================
 
-.PHONY: all clean distclean install help info
+.PHONY: all clean distclean install help info run
 
 # Objetivo principal
 all: $(TARGET)
@@ -60,7 +55,7 @@ all: $(TARGET)
 	@echo "  Compilación exitosa!"
 	@echo "  Versión: $(VERSION)"
 	@echo "  Binario: $(TARGET)"
-	@echo "  OLED: Habilitado (SSD1306)"
+	@echo "  OLED: Habilitado (SSD1306 del sistema)"
 	@echo "  Hardware: Raspberry Pi (bcm2835)"
 	@echo "========================================"
 	@echo ""
@@ -73,12 +68,8 @@ $(BINDIR):
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
-# Crear subdirectorios de obj manteniendo jerarquía
-$(OBJDIR)/oled:
-	mkdir -p $(OBJDIR)/oled
-
 # Compilar archivos fuente
-$(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR) $(OBJDIR)/oled
+$(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
 	@echo "Compilando: $<"
 	$(CXX) $(CXXFLAGS) $(DEFINES) $(INCLUDES) -c $< -o $@
 
@@ -114,6 +105,14 @@ install: $(TARGET)
 	@echo "Instalación completada."
 
 # =============================================================================
+# Ejecutar
+# =============================================================================
+
+run: $(TARGET)
+	@echo "Ejecutando aplicación..."
+	sudo ./$(TARGET)
+
+# =============================================================================
 # Ayuda
 # =============================================================================
 
@@ -130,11 +129,12 @@ help:
 	@echo "  clean      - Limpiar archivos objeto"
 	@echo "  distclean  - Limpiar todo (objetos + binario)"
 	@echo "  install    - Instalar en /usr/local/bin"
+	@echo "  run        - Ejecutar la aplicación"
 	@echo "  help       - Mostrar esta ayuda"
 	@echo "  info       - Mostrar información del sistema"
 	@echo ""
 	@echo "Esta rama está diseñada para Raspberry Pi."
-	@echo "Siempre compila con soporte OLED y bcm2835."
+	@echo "Usa la librería SSD1306 del sistema."
 	@echo ""
 	@echo "Versión: $(VERSION)"
 	@echo ""
@@ -150,7 +150,7 @@ info:
 	@echo "Versión: $(VERSION)"
 	@echo "Compilador: $(CXX)"
 	@echo "Rama: raspberry"
-	@echo "OLED: Habilitado (siempre)"
+	@echo "OLED: Habilitado (librería del sistema)"
 	@echo ""
 	@echo "Flags:"
 	@echo "  CXXFLAGS: $(CXXFLAGS)"
@@ -166,5 +166,5 @@ info:
 	@echo "  - bcm2835 (librería GPIO)"
 	@echo "  - libcurl (cliente HTTP)"
 	@echo "  - nlohmann/json (parser JSON)"
-	@echo "  - SSD1306 OLED driver"
+	@echo "  - SSD1306 OLED (librería del sistema)"
 	@echo ""
